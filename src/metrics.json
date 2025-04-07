@@ -1,0 +1,39 @@
+{
+    "storage": {
+        "disks": [            
+        ],
+        "blocksizes": ["4k", "16k"],
+        "workloads": ["seqwr", "seqrd"],
+        "threads": [4, 8],
+        "flags": [
+            {
+                "file-extra-flags": "dsync"
+            }
+        ]
+
+    },
+    "network": {
+        "interfaces": [
+        ],
+        "threads":[1, 4],
+        "peers":
+            [
+            ],
+        
+        "workloads": [
+            "iperf",
+            "ping",
+            "hping3"
+        ]
+    },
+    "cpu": {
+        
+        "parameters": [
+            {
+                "threads": [1, 2, 4],
+                "cpu-max-prime": 100000
+                
+            }
+        ]
+    }
+}

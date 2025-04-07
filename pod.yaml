@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: odf-preinstall-benchmark-pod
+  labels:
+    app: odf-preinstall-benchmark
+spec:
+  restartPolicy: Never
+  containers:
+    - name: odf-benchmark
+      image: quay.io/myathnal/odf-benchmarker:latest
+      command: ["python", "benchmarker.py", "--config", "/app/metrics.json"]
+
+      volumeMounts:
+        - name: metrics-volume
+          mountPath: /app/metrics.json
+          subPath: metrics.json
+      resources:
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+  volumes:
+    - name: metrics-volume
+      configMap:
+        name: benchmark-metrics
+

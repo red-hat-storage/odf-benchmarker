@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: odf-preinstall-benchmark
+  labels:
+    app: odf-preinstall-benchmark
+spec:
+  selector:
+    matchLabels:
+      app: odf-preinstall-benchmark
+  template:
+    metadata:
+      labels:
+        app: odf-preinstall-benchmark
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: odf-benchmark
+          image: quay.io/myathnal/odf-benchmarker:latest
+          command: ["python", "benchmarker.py", "--resources", "/app/resources.json", "--metrics", "/app/metrics.json"
+          ]
+          volumeMounts:
+            - name: benchmark-config
+              mountPath: /app/resources.json
+              subPath: benchmark.json
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+      volumes:
+        - name: benchmark-config
+          configMap:
+            name: benchmark-metrics
