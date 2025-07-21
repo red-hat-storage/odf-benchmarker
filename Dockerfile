@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     hping3 \
     iperf3 \
     iproute2 \
+    e2fsprogs \
+    mount \
+    mountpoint \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory inside the container
@@ -17,6 +20,9 @@ COPY src/ /app/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Create mount point directory
+RUN mkdir -p /mnt/benchmark
 
 # Define the command to run the benchmark script
 ENTRYPOINT ["python", "benchmarker.py"]

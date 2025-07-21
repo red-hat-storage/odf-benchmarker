@@ -1,7 +1,7 @@
 import itertools
-import json
 import subprocess
 import pandas as pd
+import os
 from typing import List, Dict, Any, Union
 from sysbench_parser import SysbenchParser
 
@@ -15,15 +15,74 @@ class StorageBenchmarker:
         """
         self.config = config
         self.results: List[Dict[str, Union[int, float, str]]] = []
+        self.mount_points: Dict[str, str] = {}
 
-    def parse_sysbench_output(self, output: str) -> Dict[str, Union[int, float, str]]:
+    def mount_disk(self, device_path: str) -> str:
+        """
+        Mount a disk device to a mount point for benchmarking.
+        
+        :param device_path: Path to the disk device (e.g., /dev/nbd0)
+        :return: Mount point path where the disk is mounted
+        """
+        # Create a unique mount point for this device
+        device_name = os.path.basename(device_path)
+        mount_point = f"/mnt/benchmark/{device_name}"
+        
+        # Create mount point directory if it doesn't exist
+        os.makedirs(mount_point, exist_ok=True)
+        
+        try:
+            # Check if device is already mounted
+            result = subprocess.run(['mountpoint', '-q', mount_point], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"Device {device_path} is already mounted at {mount_point}")
+                return mount_point
+            
+            # Try to mount the device
+            # First, try to create a filesystem if it doesn't exist
+            try:
+                subprocess.run(['mkfs.ext4', '-F', device_path], 
+                             capture_output=True, text=True, check=True)
+                print(f"Created ext4 filesystem on {device_path}")
+            except subprocess.CalledProcessError:
+                # Filesystem might already exist, continue
+                pass
+            
+            # Mount the device
+            subprocess.run(['mount', device_path, mount_point], 
+                         capture_output=True, text=True, check=True)
+            print(f"Mounted {device_path} to {mount_point}")
+            
+            return mount_point
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to mount {device_path}: {e}")
+            # Fallback to using the device directly if mounting fails
+            return device_path
+
+    def unmount_disk(self, mount_point: str) -> None:
+        """
+        Unmount a disk from its mount point.
+        
+        :param mount_point: Path to the mount point
+        """
+        try:
+            if mount_point.startswith('/mnt/benchmark/'):
+                subprocess.run(['umount', mount_point], 
+                             capture_output=True, text=True, check=True)
+                print(f"Unmounted {mount_point}")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to unmount {mount_point}: {e}")
+
+    def parse_sysbench_output(self, output: str) -> Dict[str, Any]:
         """
 
         Parses the output from a sysbench run and returns the results as a dictionary.
         Args:
             output (str): The raw output string from the sysbench command.
         Returns:
-            Dict[str, Union[int, float]]: A dictionary containing the parsed sysbench results.
+            Dict[str, Any]: A dictionary containing the parsed sysbench results.
 
         """
         parser = SysbenchParser(output)
@@ -40,10 +99,14 @@ class StorageBenchmarker:
         :param thread: Number of threads to use.
         :param file_extra_flags: Extra flags for file operations.
         """
+        # Get the mount point for this disk
+        mount_point = self.mount_points.get(disk_path, disk_path)
+        
         command = [
             'sysbench',
             f'--file-total-size={blocksize}',
             f'--file-test-mode={workload}',
+            f'--file-test-dir={mount_point}',
             f'--threads={thread}',
             f'--file-extra-flags={file_extra_flags}',
             'fileio',
@@ -64,10 +127,14 @@ class StorageBenchmarker:
         :param thread: Number of threads to use.
         :param file_extra_flags: Extra flags for file operations.
         """
+        # Get the mount point for this disk
+        mount_point = self.mount_points.get(disk_path, disk_path)
+        
         command = [
             'sysbench',
             f'--file-total-size={blocksize}',
             f'--file-test-mode={workload}',
+            f'--file-test-dir={mount_point}',
             f'--threads={thread}',
             f'--file-extra-flags={file_extra_flags}',
             'fileio',
@@ -82,6 +149,7 @@ class StorageBenchmarker:
             parsed_data = self.parse_sysbench_output(sysbench_output)
             parsed_data.update({
                 'disk': disk_path,
+                'mount_point': mount_point,
                 'blocksize': blocksize,
                 'workload': workload,
                 'threads': thread,
@@ -104,10 +172,14 @@ class StorageBenchmarker:
         :param thread: Number of threads to use.
         :param file_extra_flags: Extra flags for file operations.
         """
+        # Get the mount point for this disk
+        mount_point = self.mount_points.get(disk_path, disk_path)
+        
         command = [
             'sysbench',
             f'--file-total-size={blocksize}',
             f'--file-test-mode={workload}',
+            f'--file-test-dir={mount_point}',
             f'--threads={thread}',
             f'--file-extra-flags={file_extra_flags}',
             'fileio',
@@ -128,17 +200,29 @@ class StorageBenchmarker:
         threads = self.config['threads']
         flags = self.config['flags']
 
-        # Iterate over all combinations of parameters
-        for disk_path, blocksize, workload, thread, flag in itertools.product(disks, blocksizes, workloads, threads, flags):
-            file_extra_flags = flag['file-extra-flags']
+        # Mount all disks first
+        for disk_config in disks:
+            disk_path = disk_config['path']
+            mount_point = self.mount_disk(disk_path)
+            self.mount_points[disk_path] = mount_point
 
-            # Run prepare command before run command
-            self.sysbench_prepare(
-                disk_path, blocksize, workload, thread, file_extra_flags)
-            self.sysbench_run(disk_path, blocksize,
-                              workload, thread, file_extra_flags)
-            self.sysbench_cleanup(
-                disk_path, blocksize, workload, thread, file_extra_flags)
+        try:
+            # Iterate over all combinations of parameters
+            for disk_config, blocksize, workload, thread, flag in itertools.product(disks, blocksizes, workloads, threads, flags):
+                disk_path = disk_config['path']
+                file_extra_flags = flag['file-extra-flags']
+
+                # Run prepare command before run command
+                self.sysbench_prepare(
+                    disk_path, blocksize, workload, thread, file_extra_flags)
+                self.sysbench_run(disk_path, blocksize,
+                                  workload, thread, file_extra_flags)
+                self.sysbench_cleanup(
+                    disk_path, blocksize, workload, thread, file_extra_flags)
+        finally:
+            # Unmount all disks
+            for disk_path, mount_point in self.mount_points.items():
+                self.unmount_disk(mount_point)
 
     def get_results_dataframe(self) -> pd.DataFrame:
         """

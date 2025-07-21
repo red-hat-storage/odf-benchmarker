@@ -6,15 +6,27 @@ metadata:
     app: odf-preinstall-benchmark
 spec:
   restartPolicy: Never
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
   containers:
     - name: odf-benchmark
       image: quay.io/myathnal/odf-benchmarker:latest
       command: ["python", "benchmarker.py", "--config", "/app/metrics.json"]
-
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
       volumeMounts:
         - name: metrics-volume
           mountPath: /app/metrics.json
           subPath: metrics.json
+        - name: host-dev
+          mountPath: /dev
+        - name: host-proc
+          mountPath: /proc
+        - name: host-sys
+          mountPath: /sys
       resources:
         limits:
           cpu: "4"
@@ -26,4 +38,13 @@ spec:
     - name: metrics-volume
       configMap:
         name: benchmark-metrics
+    - name: host-dev
+      hostPath:
+        path: /dev
+    - name: host-proc
+      hostPath:
+        path: /proc
+    - name: host-sys
+      hostPath:
+        path: /sys
 
