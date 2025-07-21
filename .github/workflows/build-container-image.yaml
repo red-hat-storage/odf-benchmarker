@@ -1,0 +1,47 @@
+name: Benchmarker Container Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    - name: Login to Quay
+      uses: docker/login-action@v2
+      with:
+        registry: quay.io
+        username: ${{ secrets.QUAY_USERNAME }}
+        password: ${{ secrets.QUAY_PASSWORD }}
+    - name: Generate Docker tag
+      id: tag
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "tag=pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
+        elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          echo "tag=latest" >> $GITHUB_OUTPUT
+        else
+          # For other branches, sanitize the branch name
+          SANITIZED_TAG=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "tag=${SANITIZED_TAG}" >> $GITHUB_OUTPUT
+        fi
+    - name: Build the Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile
+        push: true
+        tags: |
+          quay.io/myathnal/odf-benchmarker:${{ steps.tag.outputs.tag }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+

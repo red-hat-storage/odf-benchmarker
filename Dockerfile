@@ -9,7 +9,6 @@ RUN apt-get update && apt-get install -y \
     iproute2 \
     e2fsprogs \
     mount \
-    mountpoint \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory inside the container
