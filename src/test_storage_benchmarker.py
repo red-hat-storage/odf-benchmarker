@@ -1,5 +1,3 @@
-
-
 """ 
 This module contains unit tests for the `StorageBenchmarker` class using pytest and unittest.mock.
 
@@ -28,7 +26,11 @@ from .storage_benchmarker import StorageBenchmarker
 
 # Tests using pytest
 data: Dict[str, Any] = {
-    "disks": ["/dev/nvme2n1"],
+    "disks": [
+        {
+            "path": "/dev/nvme2n1"
+        }
+    ],
     "blocksizes": ["4k", "16k", "128k", "1M", "10M", "100M"],
     "workloads": ["seqwr", "seqrd", "seqrewr", "rndwr", "rndrd", "rndrw"],
     "threads": [4, 8, 16, 32, 64],
@@ -84,12 +86,16 @@ def test_sysbench_prepare(mock_run: MagicMock, sysbench_runner_instance: Storage
     """
 
     mock_run.return_value = MagicMock()
+    # Set up mount point for the test
+    sysbench_runner_instance.mount_points["/dev/nvme2n1"] = "/mnt/benchmark/nvme2n1"
+    
     sysbench_runner_instance.sysbench_prepare(
         "/dev/nvme2n1", "4k", "seqwr", 4, "dsync")
     mock_run.assert_called_once_with([
         'sysbench',
         '--file-total-size=4k',
         '--file-test-mode=seqwr',
+        '--file-test-dir=/mnt/benchmark/nvme2n1',
         '--threads=4',
         '--file-extra-flags=dsync',
         'fileio',
@@ -101,12 +107,16 @@ def test_sysbench_prepare(mock_run: MagicMock, sysbench_runner_instance: Storage
 def test_sysbench_run(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     """ test the `sysbench_run` method of the `StorageBenchmarker` class."""
     mock_run.return_value = MagicMock(stdout=stdout)
+    # Set up mount point for the test
+    sysbench_runner_instance.mount_points["/dev/nvme2n1"] = "/mnt/benchmark/nvme2n1"
+    
     sysbench_runner_instance.sysbench_run(
         "/dev/nvme2n1", "4k", "seqwr", 4, "dsync")
     mock_run.assert_called_once_with([
         'sysbench',
         '--file-total-size=4k',
         '--file-test-mode=seqwr',
+        '--file-test-dir=/mnt/benchmark/nvme2n1',
         '--threads=4',
         '--file-extra-flags=dsync',
         'fileio',
@@ -121,12 +131,16 @@ def test_sysbench_run(mock_run: MagicMock, sysbench_runner_instance: StorageBenc
 def test_sysbench_cleanup(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     """ Test the `sysbench_cleanup` method of the `StorageBenchmarker` class."""
     mock_run.return_value = MagicMock()
+    # Set up mount point for the test
+    sysbench_runner_instance.mount_points["/dev/nvme2n1"] = "/mnt/benchmark/nvme2n1"
+    
     sysbench_runner_instance.sysbench_cleanup(
         "/dev/nvme2n1", "4k", "seqwr", 4, "dsync")
     mock_run.assert_called_once_with([
         'sysbench',
         '--file-total-size=4k',
         '--file-test-mode=seqwr',
+        '--file-test-dir=/mnt/benchmark/nvme2n1',
         '--threads=4',
         '--file-extra-flags=dsync',
         'fileio',
@@ -138,5 +152,11 @@ def test_sysbench_cleanup(mock_run: MagicMock, sysbench_runner_instance: Storage
 def test_run_all_tests(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     mock_run.return_value = MagicMock(stdout=stdout)
     sysbench_runner_instance.run_all_tests()
-    assert mock_run.call_count == len(data['blocksizes']) * len(data['workloads']) * len(
+    # Account for mount operations (mount, mkfs, mountpoint checks) + sysbench operations
+    expected_calls = len(data['blocksizes']) * len(data['workloads']) * len(
         data['threads']) * len(data['flags']) * len(data['disks']) * 3
+    # Add mount operations: mountpoint check + mkfs + mount for each disk
+    expected_calls += len(data['disks']) * 3
+    # Add unmount operations
+    expected_calls += len(data['disks'])
+    assert mock_run.call_count == expected_calls
