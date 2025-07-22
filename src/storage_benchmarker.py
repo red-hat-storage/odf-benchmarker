@@ -104,18 +104,21 @@ class StorageBenchmarker:
         
         command = [
             'sysbench',
-            f'--file-total-size={blocksize}',
+            f'--file-block-size={blocksize}',
             f'--file-test-mode={workload}',
-            f'--file-test-dir={mount_point}',
             f'--threads={thread}',
             f'--file-extra-flags={file_extra_flags}',
             'fileio',
             'prepare'
         ]
         try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
+            subprocess.run(command, capture_output=True, text=True, check=True, cwd=mount_point)
         except subprocess.CalledProcessError as e:
             print(f"Error while preparing sysbench: {e}")
+            if e.stdout:
+                print("Sysbench STDOUT:\n", e.stdout)
+            if e.stderr:
+                print("Sysbench STDERR:\n", e.stderr)
 
     def sysbench_run(self, disk_path: str, blocksize: str, workload: str, thread: int, file_extra_flags: str) -> None:
         """
@@ -132,9 +135,8 @@ class StorageBenchmarker:
         
         command = [
             'sysbench',
-            f'--file-total-size={blocksize}',
+            f'--file-block-size={blocksize}',
             f'--file-test-mode={workload}',
-            f'--file-test-dir={mount_point}',
             f'--threads={thread}',
             f'--file-extra-flags={file_extra_flags}',
             'fileio',
@@ -142,7 +144,7 @@ class StorageBenchmarker:
         ]
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, check=True)
+                command, capture_output=True, text=True, check=True, cwd=mount_point)
             sysbench_output = result.stdout
 
             # Parse the sysbench output
@@ -161,6 +163,10 @@ class StorageBenchmarker:
 
         except subprocess.CalledProcessError as e:
             print(f"Error while running sysbench: {e}")
+            if e.stdout:
+                print("Sysbench STDOUT:\n", e.stdout)
+            if e.stderr:
+                print("Sysbench STDERR:\n", e.stderr)
 
     def sysbench_cleanup(self, disk_path: str, blocksize: str, workload: str, thread: int, file_extra_flags: str) -> None:
         """
@@ -177,18 +183,21 @@ class StorageBenchmarker:
         
         command = [
             'sysbench',
-            f'--file-total-size={blocksize}',
+            f'--file-block-size={blocksize}',
             f'--file-test-mode={workload}',
-            f'--file-test-dir={mount_point}',
             f'--threads={thread}',
             f'--file-extra-flags={file_extra_flags}',
             'fileio',
             'cleanup'
         ]
         try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
+            subprocess.run(command, capture_output=True, text=True, check=True, cwd=mount_point)
         except subprocess.CalledProcessError as e:
             print(f"Error while cleaning up sysbench: {e}")
+            if e.stdout:
+                print("Sysbench STDOUT:\n", e.stdout)
+            if e.stderr:
+                print("Sysbench STDERR:\n", e.stderr)
 
     def run_all_tests(self) -> None:
         """
