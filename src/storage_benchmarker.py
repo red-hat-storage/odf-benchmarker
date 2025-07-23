@@ -2,20 +2,22 @@ import itertools
 import subprocess
 import pandas as pd
 import os
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from sysbench_parser import SysbenchParser
 
 
 class StorageBenchmarker:
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any], mount_base: Optional[str] = None) -> None:
         """
         Initialize the SysbenchRunner with a configuration dictionary.
 
         :param config: Configuration dictionary containing disks, blocksizes, workloads, threads, and flags.
+        :param mount_base: Base directory for mounting disks (default: /mnt/benchmark)
         """
         self.config = config
         self.results: List[Dict[str, Union[int, float, str]]] = []
         self.mount_points: Dict[str, str] = {}
+        self.mount_base = mount_base or "/mnt/benchmark"
 
     def mount_disk(self, device_path: str) -> str:
         """
@@ -26,10 +28,15 @@ class StorageBenchmarker:
         """
         # Create a unique mount point for this device
         device_name = os.path.basename(device_path)
-        mount_point = f"/mnt/benchmark/{device_name}"
+        mount_point = os.path.join(self.mount_base, device_name)
         
         # Create mount point directory if it doesn't exist
-        os.makedirs(mount_point, exist_ok=True)
+        try:
+            os.makedirs(mount_point, exist_ok=True)
+        except OSError as e:
+            print(f"Failed to create mount point directory {mount_point}: {e}")
+            # Fallback to using the device directly if directory creation fails
+            return device_path
         
         try:
             # Check if device is already mounted
@@ -68,7 +75,7 @@ class StorageBenchmarker:
         :param mount_point: Path to the mount point
         """
         try:
-            if mount_point.startswith('/mnt/benchmark/'):
+            if mount_point.startswith(self.mount_base):
                 subprocess.run(['umount', mount_point], 
                              capture_output=True, text=True, check=True)
                 print(f"Unmounted {mount_point}")

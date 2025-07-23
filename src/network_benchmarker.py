@@ -56,7 +56,10 @@ class NetworkBenchmarker:
                         bandwidth *= 1000  # Convert Gbits to Mbits
 
                 # Save to dataframe
-                self.results_df = pd.concat([self.results_df, pd.DataFrame([{
+                frames = []
+                if not self.results_df.empty:
+                    frames.append(self.results_df)
+                frames.append(pd.DataFrame([{
                     "workload": "iperf",
                     "interface": interface,
                     "peer": peer,
@@ -64,7 +67,10 @@ class NetworkBenchmarker:
                     "avg_latency": None,
                     "p95_latency": None,
                     "bandwidth": bandwidth
-                }])], ignore_index=True)
+                }]))
+                filtered_frames = [f for f in frames if not f.empty and not f.isna().all().all()]
+                if filtered_frames:
+                    self.results_df = pd.concat(filtered_frames, ignore_index=True)
             else:
                 print(
                     f"iperf3 failed for peer {peer} with {num_threads} threads with error:")
@@ -101,7 +107,10 @@ class NetworkBenchmarker:
                     print(f"Average Latency: {avg_latency:.2f} ms")
                     print(f"95th Percentile Latency: {p95_latency:.2f} ms")
                     # Save to dataframe
-                    self.results_df = pd.concat([self.results_df, pd.DataFrame([{
+                    frames = []
+                    if not self.results_df.empty:
+                        frames.append(self.results_df)
+                    frames.append(pd.DataFrame([{
                         "workload": "ping",
                         "interface": None,
                         "peer": peer,
@@ -109,7 +118,10 @@ class NetworkBenchmarker:
                         "avg_latency": avg_latency,
                         "p95_latency": p95_latency,
                         "bandwidth": None
-                    }])], ignore_index=True)
+                    }]))
+                    filtered_frames = [f for f in frames if not f.empty and not f.isna().all().all()]
+                    if filtered_frames:
+                        self.results_df = pd.concat(filtered_frames, ignore_index=True)
             else:
                 print(f"Ping failed for peer {peer} with error:")
                 print(result.stderr)
@@ -145,7 +157,10 @@ class NetworkBenchmarker:
                     print(f"Average Latency: {avg_latency:.2f} ms")
                     print(f"95th Percentile Latency: {p95_latency:.2f} ms")
                     # Save to dataframe
-                    self.results_df = pd.concat([self.results_df, pd.DataFrame([{
+                    frames = []
+                    if not self.results_df.empty:
+                        frames.append(self.results_df)
+                    frames.append(pd.DataFrame([{
                         "workload": "hping",
                         "interface": None,
                         "peer": peer,
@@ -153,7 +168,10 @@ class NetworkBenchmarker:
                         "avg_latency": avg_latency,
                         "p95_latency": p95_latency,
                         "bandwidth": None
-                    }])], ignore_index=True)
+                    }]))
+                    filtered_frames = [f for f in frames if not f.empty and not f.isna().all().all()]
+                    if filtered_frames:
+                        self.results_df = pd.concat(filtered_frames, ignore_index=True)
             else:
                 print(f"hping3 failed for peer {peer} with error:")
                 print(result.stderr)

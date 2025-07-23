@@ -17,12 +17,16 @@ Test Functions:
     - test_run_all_tests: Tests the `run_all_tests` method.
 """
 
+import tempfile
+import shutil
+import pytest
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
+import pandas as pd
+import subprocess
+import os
 
-import pytest
-
-from .storage_benchmarker import StorageBenchmarker
+from src.storage_benchmarker import StorageBenchmarker
 
 # Tests using pytest
 data: Dict[str, Any] = {
@@ -63,14 +67,16 @@ stdout = """
              95th percentile:                        0.00
              sum:                                79932.20
         """
-
+@pytest.fixture
+def temp_mount_base():
+    tmpdir = tempfile.mkdtemp()
+    yield tmpdir
+    shutil.rmtree(tmpdir)
 
 @pytest.fixture
-def sysbench_runner_instance():
-    """Provides an instance of the `StorageBenchmarker` class initialized"""
-    return StorageBenchmarker(data)
-
-
+def sysbench_runner_instance(temp_mount_base):
+    """Provides an instance of the `StorageBenchmarker` class initialized with a temp mount base."""
+    return StorageBenchmarker(data, mount_base=temp_mount_base)
 @patch('subprocess.run')
 def test_sysbench_prepare(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     """
@@ -93,16 +99,14 @@ def test_sysbench_prepare(mock_run: MagicMock, sysbench_runner_instance: Storage
         "/dev/nvme2n1", "4k", "seqwr", 4, "dsync")
     mock_run.assert_called_once_with([
         'sysbench',
-        '--file-total-size=4k',
+        '--file-block-size=4k',
         '--file-test-mode=seqwr',
-        '--file-test-dir=/mnt/benchmark/nvme2n1',
+        
         '--threads=4',
         '--file-extra-flags=dsync',
         'fileio',
         'prepare'
-    ], capture_output=True, text=True, check=True)
-
-
+    ], capture_output=True, text=True, check=True, cwd="/mnt/benchmark/nvme2n1")
 @patch('subprocess.run')
 def test_sysbench_run(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     """ test the `sysbench_run` method of the `StorageBenchmarker` class."""
@@ -114,19 +118,17 @@ def test_sysbench_run(mock_run: MagicMock, sysbench_runner_instance: StorageBenc
         "/dev/nvme2n1", "4k", "seqwr", 4, "dsync")
     mock_run.assert_called_once_with([
         'sysbench',
-        '--file-total-size=4k',
+        '--file-block-size=4k',
         '--file-test-mode=seqwr',
-        '--file-test-dir=/mnt/benchmark/nvme2n1',
+        
         '--threads=4',
         '--file-extra-flags=dsync',
         'fileio',
         'run'
-    ], capture_output=True, text=True, check=True)
+    ], capture_output=True, text=True, check=True, cwd="/mnt/benchmark/nvme2n1")
     print(sysbench_runner_instance.results)
     assert sysbench_runner_instance.results[0]['writes/s'] == 29718.09
     assert sysbench_runner_instance.results[0]['latency_max'] == 8.15
-
-
 @patch('subprocess.run')
 def test_sysbench_cleanup(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     """ Test the `sysbench_cleanup` method of the `StorageBenchmarker` class."""
@@ -138,16 +140,14 @@ def test_sysbench_cleanup(mock_run: MagicMock, sysbench_runner_instance: Storage
         "/dev/nvme2n1", "4k", "seqwr", 4, "dsync")
     mock_run.assert_called_once_with([
         'sysbench',
-        '--file-total-size=4k',
+        '--file-block-size=4k',
         '--file-test-mode=seqwr',
-        '--file-test-dir=/mnt/benchmark/nvme2n1',
+        
         '--threads=4',
         '--file-extra-flags=dsync',
         'fileio',
         'cleanup'
-    ], capture_output=True, text=True, check=True)
-
-
+    ], capture_output=True, text=True, check=True, cwd="/mnt/benchmark/nvme2n1")
 @patch('subprocess.run')
 def test_run_all_tests(mock_run: MagicMock, sysbench_runner_instance: StorageBenchmarker):
     mock_run.return_value = MagicMock(stdout=stdout)
@@ -160,3 +160,59 @@ def test_run_all_tests(mock_run: MagicMock, sysbench_runner_instance: StorageBen
     # Add unmount operations
     expected_calls += len(data['disks'])
     assert mock_run.call_count == expected_calls
+
+def test_mount_disk_success_and_already_mounted():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bench = StorageBenchmarker(data, mount_base=tmpdir)
+        with patch("subprocess.run") as mock_run:
+            # Simulate not mounted, then success
+            mock_run.side_effect = [MagicMock(returncode=1), MagicMock(), MagicMock()]
+            mount_point = bench.mount_disk("/dev/nvme2n1")
+            assert mount_point.startswith(tmpdir)
+            # Simulate already mounted
+            mock_run.side_effect = [MagicMock(returncode=0)]
+            mount_point2 = bench.mount_disk("/dev/nvme2n1")
+            assert mount_point2 == mount_point
+
+def test_mount_disk_failure():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bench = StorageBenchmarker(data, mount_base=tmpdir)
+        with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "mount")):
+            mount_point = bench.mount_disk("/dev/nvme2n1")
+            assert mount_point == "/dev/nvme2n1"
+
+def test_unmount_disk_success_and_failure():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bench = StorageBenchmarker(data, mount_base=tmpdir)
+        with patch("subprocess.run") as mock_run:
+            bench.unmount_disk(tmpdir)  # Should call umount
+        with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "umount")):
+            bench.unmount_disk(tmpdir)  # Should print error but not raise
+
+def test_sysbench_prepare_run_cleanup_error_branches():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bench = StorageBenchmarker(data, mount_base=tmpdir)
+        bench.mount_points["/dev/nvme2n1"] = tmpdir
+        with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "sysbench")):
+            bench.sysbench_prepare("/dev/nvme2n1", "4k", "seqwr", 1, "dsync")
+            bench.sysbench_run("/dev/nvme2n1", "4k", "seqwr", 1, "dsync")
+            bench.sysbench_cleanup("/dev/nvme2n1", "4k", "seqwr", 1, "dsync")
+
+def test_run_all_tests_and_run():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bench = StorageBenchmarker(data, mount_base=tmpdir)
+        # Patch all subprocess.run to always succeed
+        with patch("subprocess.run") as mock_run, \
+             patch.object(bench, "parse_sysbench_output", return_value={"result": 1}):
+            mock_run.return_value = MagicMock(stdout="output", returncode=0)
+            bench.run_all_tests()
+            df = bench.run()
+            assert isinstance(df, pd.DataFrame)
+            assert not df.empty
+
+def test_mount_disk_oserror():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bench = StorageBenchmarker(data, mount_base=tmpdir)
+        with patch("os.makedirs", side_effect=OSError("fail mkdir")):
+            mount_point = bench.mount_disk("/dev/nbd0")
+            assert mount_point == "/dev/nbd0"

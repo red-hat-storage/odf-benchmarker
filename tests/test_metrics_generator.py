@@ -1,5 +1,5 @@
 import unittest
-from metrics_generator import generate_node_specific_metrics
+from src.metrics_generator import generate_node_specific_metrics
 
 
 class TestGenerateNodeSpecificMetrics(unittest.TestCase):

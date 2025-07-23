@@ -1,8 +1,8 @@
-from unittest.mock import patch
-from unittest.mock import MagicMock
 import pytest
 import subprocess
-from .cpu_benchmarker import CPUBenchmarker
+import pandas as pd
+from src.cpu_benchmarker import CPUBenchmarker
+from unittest.mock import patch, MagicMock
 
 stdout: str = """
         CPU speed:
@@ -82,3 +82,47 @@ def test_sysbench_cpu_runner_error(mock_subprocess_run: MagicMock):
         ['sysbench', 'cpu', '--threads=1', '--cpu-max-prime=10000', 'run'],
         capture_output=True, text=True, check=True
     )
+
+def test_sysbench_cpu_runner():
+    config = {
+        "parameters": [
+            {"threads": [1], "cpu-max-prime": [10000]}
+        ]
+    }
+    with patch("subprocess.run") as mock_run, \
+         patch("src.cpu_benchmarker.SysbenchParser") as mock_parser:
+        mock_run.return_value = MagicMock(stdout="sysbench output", returncode=0)
+        mock_parser.return_value.parse_output.return_value = None
+        mock_parser.return_value.data = {"events_per_sec": 123}
+        cpu = CPUBenchmarker(config)
+        df = cpu.run()
+        assert not df.empty
+        assert df.iloc[0]["events_per_sec"] == 123
+
+def test_sysbench_cpu_runner_error():
+    config = {
+        "parameters": [
+            {"threads": [1], "cpu-max-prime": [10000]}
+        ]
+    }
+    with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "sysbench", stderr="error output")), \
+         patch("src.cpu_benchmarker.SysbenchParser") as mock_parser:
+        mock_parser.return_value.parse_output.return_value = None
+        mock_parser.return_value.data = {"error": "fail"}
+        cpu = CPUBenchmarker(config)
+        df = cpu.run()
+        assert not df.empty
+        assert df.iloc[0]["error"] == "fail"
+
+def test_get_resutls_df_success():
+    cpu = CPUBenchmarker({})
+    with patch("src.cpu_benchmarker.SysbenchParser") as mock_parser:
+        mock_parser.return_value.to_dataframe.return_value = pd.DataFrame({"a": [1]})
+        cpu.parser = mock_parser.return_value
+        df = cpu.get_resutls_df()
+        assert not df.empty
+
+def test_get_resutls_df_no_results():
+    cpu = CPUBenchmarker({})
+    with pytest.raises(ValueError):
+        cpu.get_resutls_df()
